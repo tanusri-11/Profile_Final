@@ -27,7 +27,7 @@ app.use(bodyParser.urlencoded({
     extended: true
 }))
 
-// Updated database configuration with environment variables
+// UPDATED: Database configuration with SSL/TLS support for Render
 const pool = new postgresPool({
     user: process.env.DB_USER || "postgres",
     password: process.env.DB_PASSWORD || "post@123", 
@@ -38,9 +38,13 @@ const pool = new postgresPool({
     // Add connection timeout and retry settings
     connectionTimeoutMillis: 10000,
     idleTimeoutMillis: 30000,
+    // CRITICAL: SSL/TLS configuration for Render PostgreSQL
+    ssl: process.env.NODE_ENV === 'production' ? {
+        rejectUnauthorized: false
+    } : false
 })
 
-// Enhanced database connection test with better error handling
+// Enhanced database connection test with SSL logging
 pool.connect((err, client, release) => {
     if (err) {
         console.error('❌ Error connecting to database:', err);
@@ -48,12 +52,14 @@ pool.connect((err, client, release) => {
             host: process.env.DB_HOST,
             database: process.env.DB_NAME,
             user: process.env.DB_USER,
-            port: process.env.DB_PORT
+            port: process.env.DB_PORT,
+            ssl: process.env.NODE_ENV === 'production' ? 'enabled' : 'disabled'
         });
         return;
     }
     console.log(`✅ Connected to Profiles Database Successfully!`)
     console.log(`📍 Connected to: ${process.env.DB_HOST}/${process.env.DB_NAME}`)
+    console.log(`🔒 SSL: ${process.env.NODE_ENV === 'production' ? 'Enabled' : 'Disabled'}`)
     release(); // Release the client back to the pool
 })
 
@@ -180,7 +186,8 @@ app.get('/debug/profiles', async (req, res) => {
                 DB_NAME: process.env.DB_NAME,
                 DB_USER: process.env.DB_USER,
                 NODE_ENV: process.env.NODE_ENV,
-                PORT: port
+                PORT: port,
+                SSL_ENABLED: process.env.NODE_ENV === 'production'
             }
         });
         
@@ -195,7 +202,7 @@ app.get('/debug/profiles', async (req, res) => {
     }
 });
 
-// Test database connection endpoint
+// Test database connection endpoint with SSL info
 app.get('/debug/db-test', async (req, res) => {
     try {
         console.log('Testing database connection...');
@@ -203,7 +210,8 @@ app.get('/debug/db-test', async (req, res) => {
             host: process.env.DB_HOST,
             user: process.env.DB_USER,
             database: process.env.DB_NAME,
-            port: process.env.DB_PORT
+            port: process.env.DB_PORT,
+            ssl: process.env.NODE_ENV === 'production' ? 'enabled' : 'disabled'
         });
         
         // Test basic connection
@@ -222,11 +230,13 @@ app.get('/debug/db-test', async (req, res) => {
             timestamp: testResult.rows[0].current_time,
             tableExists: tableCheck.rows.length > 0,
             environment: process.env.NODE_ENV,
+            sslEnabled: process.env.NODE_ENV === 'production',
             dbConfig: {
                 host: process.env.DB_HOST || 'Not set',
                 user: process.env.DB_USER || 'Not set',
                 database: process.env.DB_NAME || 'Not set',
-                port: process.env.DB_PORT || 'Not set'
+                port: process.env.DB_PORT || 'Not set',
+                ssl: process.env.NODE_ENV === 'production' ? 'enabled' : 'disabled'
             }
         });
         
@@ -435,7 +445,8 @@ app.get('/', (req, res) => {
         message: "Profile API is running successfully!",
         timestamp: new Date().toISOString(),
         environment: process.env.NODE_ENV || 'development',
-        port: port
+        port: port,
+        sslEnabled: process.env.NODE_ENV === 'production'
     })
 });
 
@@ -446,7 +457,8 @@ app.get('/health', (req, res) => {
         timestamp: new Date().toISOString(),
         uptime: process.uptime(),
         port: port,
-        environment: process.env.NODE_ENV
+        environment: process.env.NODE_ENV,
+        sslEnabled: process.env.NODE_ENV === 'production'
     });
 });
 
@@ -461,4 +473,5 @@ app.listen(port, '0.0.0.0', (err) => {
     console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`)
     console.log(`🗄️ Database Host: ${process.env.DB_HOST || 'localhost'}`)
     console.log(`📊 Database Name: ${process.env.DB_NAME || 'Profiles'}`)
+    console.log(`🔒 SSL/TLS: ${process.env.NODE_ENV === 'production' ? 'Enabled' : 'Disabled'}`)
 })
