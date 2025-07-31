@@ -1,0 +1,16 @@
+# Global patterns
+.DS_Store
+.vscode/
+.idea/
+*.log
+
+# OS generated files
+Thumbs.db
+ehthumbs.db
+
+# Project-wide temporary files
+*.tmp
+*.temp
+
+# DO NOT ignore vercel.json - it's needed for deployment
+# vercel.json should NOT be in any .gitignore file
