@@ -8,18 +8,30 @@ const port = process.env.PORT || 3005
 // Add this for environment variables
 require('dotenv').config()
 
-app.use(cors())
+// Updated CORS configuration for production
+const corsOptions = {
+  origin: [
+    'http://localhost:3000',  // Local development
+    'https://profile-final-two.vercel.app'  // Your actual Vercel URL
+  ],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+};
+
+app.use(cors(corsOptions));
 app.use(bodyParser.json())
 app.use(bodyParser.urlencoded({
     extended: true
 }))
 
+// Updated database configuration with environment variables
 const pool = new postgresPool({
-    user: "postgres",
-    password: "post@123",
-    database: "Profiles",
-    host: "localhost",
-    port: 5432,
+    user: process.env.DB_USER || "postgres",
+    password: process.env.DB_PASSWORD || "post@123", 
+    database: process.env.DB_NAME || "Profiles",
+    host: process.env.DB_HOST || "localhost",
+    port: process.env.DB_PORT || 5432,
     max: 10
 })
 

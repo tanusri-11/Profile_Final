@@ -39,13 +39,13 @@ import {
   Verified
 } from '@mui/icons-material';
 import dayjs from 'dayjs';
-import { profileAPI, validateEmailWithAPI } from '../services/api'; // Import both functions
-
-// Email validation service functions
-const validateEmailFormat = (email) => {
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  return emailRegex.test(email);
-};
+import { profileAPI } from '../services/api';
+import { 
+  validateEmailWithAPI, 
+  validateEmailFormat,
+  shouldValidateEmail,
+  getEmailValidationMessage 
+} from '../services/emailValidation';
 
 const ProfileForm = ({ profileId, onSuccess, onCancel }) => {
   const [formData, setFormData] = useState({
@@ -70,6 +70,8 @@ const ProfileForm = ({ profileId, onSuccess, onCancel }) => {
   const [loading, setLoading] = useState(false);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
   const [emailValidationResult, setEmailValidationResult] = useState(null);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [initialEmail, setInitialEmail] = useState('');
 
   // Calculate age from date of birth
   const calculateAge = (dateOfBirth) => {
@@ -88,7 +90,10 @@ const ProfileForm = ({ profileId, onSuccess, onCancel }) => {
   // Load profile data for editing
   useEffect(() => {
     if (profileId) {
+      setIsEditMode(true);
       loadProfile(profileId);
+    } else {
+      setIsEditMode(false);
     }
   }, [profileId]);
 
@@ -125,7 +130,7 @@ const ProfileForm = ({ profileId, onSuccess, onCancel }) => {
     }
   }, [formData.age]);
 
-  // UPDATED: Load profile from actual database
+  // Load profile from actual database
   const loadProfile = async (id) => {
     try {
       setLoading(true);
@@ -136,11 +141,26 @@ const ProfileForm = ({ profileId, onSuccess, onCancel }) => {
         date_of_birth: profile.date_of_birth ? dayjs(profile.date_of_birth) : null
       };
       setFormData(profileData);
+      setInitialEmail(profile.email); // Store initial email for comparison
       
-      // Validate all fields for existing profile
+      // For edit mode, validate all fields except email (skip API validation)
       Object.keys(profileData).forEach(field => {
         if (field !== 'id') {
-          validateField(field, profileData[field]);
+          if (field === 'email') {
+            // For edit mode, just validate format
+            const formatValid = validateEmailFormat(profileData[field]);
+            setValidation(prev => ({
+              ...prev,
+              email: { 
+                isValid: formatValid, 
+                message: formatValid ? 'Email validation skipped for existing profile' : 'Please enter a valid email format',
+                isValidating: false,
+                apiValidated: true // Skip API validation in edit mode
+              }
+            }));
+          } else {
+            validateField(field, profileData[field]);
+          }
         }
       });
       
@@ -183,10 +203,24 @@ const ProfileForm = ({ profileId, onSuccess, onCancel }) => {
     return isMatch;
   };
 
-  // UPDATED: Use the API function from services/api.js
+  // Updated email validation - only for new profiles
   const validateEmailWithAPICall = async (email) => {
     if (!email || !validateEmailFormat(email)) {
       return false;
+    }
+
+    // CHECK: Only validate for new profiles, skip for edit mode
+    if (!shouldValidateEmail(isEditMode, email, initialEmail)) {
+      setValidation(prev => ({
+        ...prev,
+        email: { 
+          isValid: true, 
+          message: 'Email validation skipped for existing profile',
+          isValidating: false,
+          apiValidated: true
+        }
+      }));
+      return true;
     }
 
     setValidation(prev => ({
@@ -195,47 +229,40 @@ const ProfileForm = ({ profileId, onSuccess, onCancel }) => {
     }));
 
     try {
-      const result = await validateEmailWithAPI(email); // Use imported function
+      console.log('🔍 Starting email validation for:', email);
+      const result = await validateEmailWithAPI(email);
       setEmailValidationResult(result);
       
-      const isValid = result.isValid;
-      let message = '';
-      
-      if (isValid) {
-        message = 'Email verified successfully ✓';
-      } else {
-        // Provide specific error message based on validation result
-        if (!result.details.format_valid) {
-          message = 'Email format is invalid - please check your email address';
-        } else if (!result.details.mx_found) {
-          message = 'Email domain does not exist - please verify the domain';
-        } else if (!result.details.smtp_check) {
-          message = 'Email address cannot receive emails - please check the address';
-        } else if (result.details.score < 0.6) {
-          message = 'Email address quality is too low - please use a different email';
-        } else {
-          message = `Email validation failed: ${result.reason}`;
-        }
-        
-        // Show suggestion if available
-        if (result.suggestion) {
-          message += ` (Did you mean: ${result.suggestion}?)`;
-        }
-      }
+      const message = getEmailValidationMessage(result, isEditMode);
       
       setValidation(prev => ({
         ...prev,
         email: { 
-          isValid, 
+          isValid: result.isValid,
           message,
           isValidating: false,
           apiValidated: true
         }
       }));
 
-      return isValid;
+      return result.isValid;
     } catch (error) {
       console.error('Email validation error:', error);
+      
+      // In edit mode, if API fails, allow the existing email
+      if (isEditMode && email === initialEmail) {
+        setValidation(prev => ({
+          ...prev,
+          email: { 
+            isValid: true, 
+            message: 'Email validation unavailable - using existing email',
+            isValidating: false,
+            apiValidated: true
+          }
+        }));
+        return true;
+      }
+      
       setValidation(prev => ({
         ...prev,
         email: { 
@@ -297,7 +324,21 @@ const ProfileForm = ({ profileId, onSuccess, onCancel }) => {
           return false;
         }
         
-        // Perform API validation
+        // NEW: Use shouldValidateEmail utility function
+        if (!shouldValidateEmail(isEditMode, value, initialEmail)) {
+          setValidation(prev => ({
+            ...prev,
+            email: { 
+              isValid: true, 
+              message: 'Email validation skipped for profile updates',
+              isValidating: false, 
+              apiValidated: true 
+            }
+          }));
+          return true;
+        }
+        
+        // Perform API validation only for new profiles
         return await validateEmailWithAPICall(value);
         
       case 'phone_number':
@@ -379,7 +420,7 @@ const ProfileForm = ({ profileId, onSuccess, onCancel }) => {
     return mainFieldsValid && validation.ageAndDateMatch.isValid && validation.email.apiValidated;
   };
 
-  // UPDATED: Save to actual database
+  // Save to actual database
   const handleSubmit = async (e) => {
     e.preventDefault();
     
@@ -397,7 +438,7 @@ const ProfileForm = ({ profileId, onSuccess, onCancel }) => {
       allValid = false;
     }
 
-    // Check if email is API validated
+    // Check if email is API validated (with different rules for edit vs create)
     if (!validation.email.apiValidated) {
       setSnackbar({
         open: true,
@@ -462,6 +503,7 @@ const ProfileForm = ({ profileId, onSuccess, onCancel }) => {
           ageAndDateMatch: { isValid: false, message: '' }
         });
         setEmailValidationResult(null);
+        setInitialEmail('');
       }
 
       if (onSuccess) {
@@ -691,7 +733,7 @@ const ProfileForm = ({ profileId, onSuccess, onCancel }) => {
                 <Divider sx={{ mb: 3 }} />
                 
                 <Grid container spacing={3}>
-                  {/* Email Field - Full Width with API Validation */}
+                  {/* Email Field - Full Width with Conditional API Validation */}
                   <Grid item xs={12}>
                     <TextField
                       fullWidth
@@ -701,7 +743,7 @@ const ProfileForm = ({ profileId, onSuccess, onCancel }) => {
                       onChange={(e) => handleInputChange('email', e.target.value)}
                       variant="outlined"
                       required
-                      error={!!validation.email.message}
+                      error={!!validation.email.message && !validation.email.isValid}
                       helperText={
                         <Box>
                           {validation.email.message}
@@ -714,6 +756,11 @@ const ProfileForm = ({ profileId, onSuccess, onCancel }) => {
                                 variant="outlined"
                               />
                             </Box>
+                          )}
+                          {isEditMode && formData.email === initialEmail && (
+                            <Typography variant="caption" color="info.main" sx={{ display: 'block', mt: 0.5 }}>
+                              💡 Email validation is skipped when updating existing profiles
+                            </Typography>
                           )}
                         </Box>
                       }
@@ -729,7 +776,7 @@ const ProfileForm = ({ profileId, onSuccess, onCancel }) => {
                               <CircularProgress size={20} />
                             ) : validation.email.isValid && validation.email.apiValidated ? (
                               <Verified color="success" />
-                            ) : validation.email.message && !validation.email.isValidating ? (
+                            ) : validation.email.message && !validation.email.isValidating && !validation.email.isValid ? (
                               <Error color="error" />
                             ) : null}
                           </InputAdornment>
@@ -769,8 +816,8 @@ const ProfileForm = ({ profileId, onSuccess, onCancel }) => {
               </CardContent>
             </Card>
 
-            {/* Email Validation Details */}
-            {emailValidationResult && emailValidationResult.details && (
+            {/* Email Validation Details - Only show for new profiles when validation was performed */}
+            {emailValidationResult && emailValidationResult.details && !isEditMode && (
               <Card elevation={2} sx={{ borderRadius: 2 }}>
                 <CardContent>
                   <Typography variant="h6" gutterBottom color="primary" fontWeight="bold">
@@ -805,7 +852,7 @@ const ProfileForm = ({ profileId, onSuccess, onCancel }) => {
                     </Grid>
                     <Grid item xs={6} sm={3}>
                       <Chip 
-                        label={`Score: ${emailValidationResult.details.score}`}
+                        label={`Score: ${emailValidationResult.details.score || 0}`}
                         color={emailValidationResult.details.score > 0.7 ? 'success' : 'warning'}
                         size="small"
                         sx={{ width: '100%' }}

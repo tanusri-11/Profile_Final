@@ -1,6 +1,7 @@
 import axios from 'axios';
 
-const API_BASE_URL = 'http://localhost:3005';
+// Updated API base URL to use environment variables
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:3005';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -89,7 +90,7 @@ export const profileAPI = {
       };
     } catch (error) {
       console.error('Error fetching profiles:', error);
-      if (error.code === 'ECONNREFUSED') {
+      if (error.code === 'ECONNREFUSED' || error.message.includes('Failed to fetch')) {
         throw new Error('Server is not running. Please start the backend server.');
       }
       throw error;
@@ -107,6 +108,9 @@ export const profileAPI = {
       console.error(`Error fetching profile ${id}:`, error);
       if (error.response?.status === 404) {
         throw new Error('Profile not found');
+      }
+      if (error.code === 'ECONNREFUSED' || error.message.includes('Failed to fetch')) {
+        throw new Error('Cannot connect to server. Please check your internet connection.');
       }
       throw error;
     }
@@ -166,8 +170,8 @@ export const profileAPI = {
         throw new Error(error.response.data.error);
       }
       
-      if (error.code === 'ECONNREFUSED') {
-        throw new Error('Cannot connect to server. Please ensure the backend is running on port 3005.');
+      if (error.code === 'ECONNREFUSED' || error.message.includes('Failed to fetch')) {
+        throw new Error('Cannot connect to server. Please ensure the backend is running.');
       }
       
       throw error;
@@ -201,8 +205,8 @@ export const profileAPI = {
         throw new Error(error.response.data.error);
       }
       
-      if (error.code === 'ECONNREFUSED') {
-        throw new Error('Cannot connect to server. Please ensure the backend is running on port 3005.');
+      if (error.code === 'ECONNREFUSED' || error.message.includes('Failed to fetch')) {
+        throw new Error('Cannot connect to server. Please ensure the backend is running.');
       }
       
       throw error;
@@ -227,8 +231,8 @@ export const profileAPI = {
         throw new Error(error.response.data.error);
       }
       
-      if (error.code === 'ECONNREFUSED') {
-        throw new Error('Cannot connect to server. Please ensure the backend is running on port 3005.');
+      if (error.code === 'ECONNREFUSED' || error.message.includes('Failed to fetch')) {
+        throw new Error('Cannot connect to server. Please ensure the backend is running.');
       }
       
       throw error;
@@ -239,7 +243,7 @@ export const profileAPI = {
 // Add request interceptor for debugging and error handling
 api.interceptors.request.use(
   (config) => {
-    console.log(`🚀 Making ${config.method.toUpperCase()} request to ${config.url}`);
+    console.log(`🚀 Making ${config.method.toUpperCase()} request to ${config.baseURL}${config.url}`);
     if (config.data) {
       console.log('📤 Request data:', config.data);
     }
@@ -267,14 +271,16 @@ api.interceptors.response.use(
       console.error('❌ Server Error:', {
         status: error.response.status,
         data: error.response.data,
-        url: error.config?.url
+        url: error.config?.url,
+        baseURL: error.config?.baseURL
       });
     } else if (error.request) {
       // Request was made but no response received
       console.error('❌ Network Error:', {
         message: error.message,
         code: error.code,
-        url: error.config?.url
+        url: error.config?.url,
+        baseURL: error.config?.baseURL
       });
     } else {
       // Something else happened
@@ -289,9 +295,11 @@ export const testConnection = async () => {
   try {
     const response = await api.get('/');
     console.log('✅ API Connection Test Successful:', response.data);
+    console.log(`🔗 Connected to: ${API_BASE_URL}`);
     return true;
   } catch (error) {
     console.error('❌ API Connection Test Failed:', error.message);
+    console.error(`🔗 Failed to connect to: ${API_BASE_URL}`);
     return false;
   }
 };
