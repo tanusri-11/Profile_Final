@@ -58,13 +58,13 @@ export const profileAPI = {
   // Get all profiles with pagination support
   getAllProfiles: async (page = 1, limit = 5) => {
     try {
-      console.log(`Fetching profiles - Page: ${page}, Limit: ${limit}`);
+      console.log(`🔍 Fetching profiles - Page: ${page}, Limit: ${limit} from ${API_BASE_URL}`);
       
       const response = await api.get('/profiles', {
         params: { page, limit }
       });
       
-      console.log('Profiles fetched successfully:', response.data);
+      console.log('✅ Profiles fetched successfully:', response.data);
       
       // Handle both paginated and simple array responses
       if (response.data.profiles) {
@@ -89,7 +89,7 @@ export const profileAPI = {
         }
       };
     } catch (error) {
-      console.error('Error fetching profiles:', error);
+      console.error('❌ Error fetching profiles:', error);
       if (error.code === 'ECONNREFUSED' || error.message.includes('Failed to fetch')) {
         throw new Error('Server is not running. Please start the backend server.');
       }
@@ -100,12 +100,12 @@ export const profileAPI = {
   // Get single profile by ID
   getProfileById: async (id) => {
     try {
-      console.log(`Fetching profile with ID: ${id}`);
+      console.log(`🔍 Fetching profile with ID: ${id}`);
       const response = await api.get(`/profiles/${id}`);
-      console.log('Profile fetched successfully:', response.data);
+      console.log('✅ Profile fetched successfully:', response.data);
       return response;
     } catch (error) {
-      console.error(`Error fetching profile ${id}:`, error);
+      console.error(`❌ Error fetching profile ${id}:`, error);
       if (error.response?.status === 404) {
         throw new Error('Profile not found');
       }
@@ -116,15 +116,15 @@ export const profileAPI = {
     }
   },
   
-  // Get most recent profile
+  // UPDATED: Get most recent profile - Fixed endpoint
   getRecentProfile: async () => {
     try {
-      console.log('Fetching most recent profile...');
-      const response = await api.get('/profiles/recent/latest');
-      console.log('Recent profile fetched successfully:', response.data);
+      console.log('🔍 Fetching most recent profile...');
+      const response = await api.get('/profiles/recent'); // ✅ CHANGED from '/profiles/recent/latest'
+      console.log('✅ Recent profile fetched successfully:', response.data);
       return response;
     } catch (error) {
-      console.log('Recent profile endpoint not available, trying fallback...');
+      console.log('⚠️ Recent profile endpoint not available, trying fallback...');
       // Fallback: get all profiles and return the most recent one
       try {
         const allProfiles = await api.get('/profiles');
@@ -134,14 +134,14 @@ export const profileAPI = {
           // If it's paginated response, use profiles array
           const profilesArray = profiles.profiles || profiles;
           const mostRecent = profilesArray[profilesArray.length - 1];
-          console.log('Recent profile from fallback:', mostRecent);
+          console.log('✅ Recent profile from fallback:', mostRecent);
           return { data: mostRecent };
         }
         
-        console.log('No profiles found');
+        console.log('ℹ️ No profiles found');
         return { data: null };
       } catch (fallbackError) {
-        console.error('Error fetching recent profile (fallback):', fallbackError);
+        console.error('❌ Error fetching recent profile (fallback):', fallbackError);
         return { data: null };
       }
     }
@@ -150,7 +150,7 @@ export const profileAPI = {
   // Create new profile
   createProfile: async (profileData) => {
     try {
-      console.log('Creating new profile:', profileData);
+      console.log('🆕 Creating new profile:', profileData);
       
       // Validate required fields
       const requiredFields = ['name', 'age', 'email', 'phone_number', 'date_of_birth', 'gender'];
@@ -161,10 +161,10 @@ export const profileAPI = {
       }
       
       const response = await api.post('/profiles', profileData);
-      console.log('Profile created successfully:', response.data);
+      console.log('✅ Profile created successfully:', response.data);
       return response;
     } catch (error) {
-      console.error('Error creating profile:', error);
+      console.error('❌ Error creating profile:', error);
       
       if (error.response?.data?.error) {
         throw new Error(error.response.data.error);
@@ -181,7 +181,7 @@ export const profileAPI = {
   // Update profile
   updateProfile: async (id, profileData) => {
     try {
-      console.log(`Updating profile ${id}:`, profileData);
+      console.log(`✏️ Updating profile ${id}:`, profileData);
       
       // Validate required fields
       const requiredFields = ['name', 'age', 'email', 'phone_number', 'date_of_birth', 'gender'];
@@ -192,10 +192,10 @@ export const profileAPI = {
       }
       
       const response = await api.put(`/profiles/${id}`, profileData);
-      console.log('Profile updated successfully:', response.data);
+      console.log('✅ Profile updated successfully:', response.data);
       return response;
     } catch (error) {
-      console.error(`Error updating profile ${id}:`, error);
+      console.error(`❌ Error updating profile ${id}:`, error);
       
       if (error.response?.status === 404) {
         throw new Error('Profile not found');
@@ -216,12 +216,12 @@ export const profileAPI = {
   // Delete profile
   deleteProfile: async (id) => {
     try {
-      console.log(`Deleting profile ${id}`);
+      console.log(`🗑️ Deleting profile ${id}`);
       const response = await api.delete(`/profiles/${id}`);
-      console.log('Profile deleted successfully:', response.data);
+      console.log('✅ Profile deleted successfully:', response.data);
       return response;
     } catch (error) {
-      console.error(`Error deleting profile ${id}:`, error);
+      console.error(`❌ Error deleting profile ${id}:`, error);
       
       if (error.response?.status === 404) {
         throw new Error('Profile not found');

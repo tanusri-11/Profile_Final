@@ -138,13 +138,7 @@ app.get('/debug/profiles', async (req, res) => {
             timestamp: testResult.rows[0].now,
             profileCount: profilesResult.rows[0].count,
             sampleProfiles: sampleProfiles.rows,
-            message: 'Database connection working',
-            environment: {
-                DB_HOST: process.env.DB_HOST || 'localhost',
-                DB_NAME: process.env.DB_NAME || 'Profiles',
-                DB_USER: process.env.DB_USER || 'postgres',
-                NODE_ENV: process.env.NODE_ENV || 'development'
-            }
+            message: 'Database connection working'
         });
         
     } catch (error) {
@@ -158,8 +152,8 @@ app.get('/debug/profiles', async (req, res) => {
     }
 });
 
-// FIXED: GET MOST RECENT PROFILE (moved BEFORE general /profiles route)
-app.get("/profiles/recent/latest", (req, res) => {
+// FIXED: GET MOST RECENT PROFILE - Using simpler route pattern
+app.get('/profiles/recent', (req, res) => {
     console.log('🔍 Fetching most recent profile...');
     const sql = 'SELECT * FROM "Profile_Data" ORDER BY id DESC LIMIT 1';
     pool.query(sql, (err, result) => {
@@ -169,17 +163,23 @@ app.get("/profiles/recent/latest", (req, res) => {
         }
         if (result.rows.length === 0) {
             console.log('No profiles found');
-            return res.status(200).json(null); // No profiles yet
+            return res.status(200).json(null);
         }
         console.log('✅ Recent profile fetched:', result.rows[0]);
         return res.status(200).json(result.rows[0])
     })
 });
 
-// FIXED: GET SINGLE PROFILE BY ID (moved BEFORE general /profiles route)
-app.get("/profiles/:id", (req, res) => {
+// GET SINGLE PROFILE BY ID
+app.get('/profiles/:id', (req, res) => {
     const id = Number(req.params.id);
     console.log(`🔍 Fetching profile with ID: ${id}`);
+    
+    // Validate ID
+    if (isNaN(id) || id <= 0) {
+        return res.status(400).json({ error: 'Invalid profile ID' });
+    }
+    
     const sql = 'SELECT * FROM "Profile_Data" WHERE id=$1';
     pool.query(sql, [id], (err, result) => {
         if (err) {
@@ -194,8 +194,8 @@ app.get("/profiles/:id", (req, res) => {
     })
 });
 
-// GET ALL PROFILES WITH PAGINATION (moved AFTER specific routes)
-app.get("/profiles", (req, res) => {
+// GET ALL PROFILES WITH PAGINATION
+app.get('/profiles', (req, res) => {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
     const offset = (page - 1) * limit;
@@ -264,7 +264,7 @@ app.post('/profiles', async (req, res) => {
         });
     } catch (err) {
         console.error('❌ Database error:', err);
-        if (err.code === '23505') { // Unique constraint violation
+        if (err.code === '23505') {
             if (err.constraint === 'unique_email') {
                 return res.status(400).json({ error: 'Email already exists' });
             }
@@ -341,7 +341,7 @@ app.delete('/profiles/:id', async (req, res) => {
 });
 
 // Test route
-app.get("/", (req, res) => {
+app.get('/', (req, res) => {
     res.json({ 
         message: "Profile API is running successfully!",
         timestamp: new Date().toISOString(),
@@ -349,26 +349,20 @@ app.get("/", (req, res) => {
     })
 });
 
-// Handle 404 for undefined routes
-app.use('*', (req, res) => {
-    res.status(404).json({
-        error: 'Route not found',
-        path: req.originalUrl,
-        method: req.method
-    });
-});
-
-// Global error handler
-app.use((err, req, res, next) => {
-    console.error('Unhandled error:', err);
-    res.status(500).json({
-        error: 'Internal server error',
-        message: err.message
+// Health check endpoint
+app.get('/health', (req, res) => {
+    res.json({
+        status: 'OK',
+        timestamp: new Date().toISOString(),
+        uptime: process.uptime()
     });
 });
 
 app.listen(port, (err) => {
-    if (err) throw err;
+    if (err) {
+        console.error('Failed to start server:', err);
+        process.exit(1);
+    }
     console.log(`🚀 Server is running successfully on port: ${port}`)
     console.log(`🔗 API Base URL: http://localhost:${port}`)
     console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`)
