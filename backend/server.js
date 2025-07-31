@@ -3,7 +3,9 @@ const cors = require("cors")
 const postgresPool = require("pg").Pool
 const app = express()
 const bodyParser = require("body-parser")
-const port = process.env.PORT || 3005
+
+// CRITICAL: Use Render's port or fallback to 10000 (not 3005)
+const port = process.env.PORT || 10000
 
 // Add this for environment variables
 require('dotenv').config()
@@ -32,18 +34,52 @@ const pool = new postgresPool({
     database: process.env.DB_NAME || "Profiles",
     host: process.env.DB_HOST || "localhost",
     port: process.env.DB_PORT || 5432,
-    max: 10
+    max: 10,
+    // Add connection timeout and retry settings
+    connectionTimeoutMillis: 10000,
+    idleTimeoutMillis: 30000,
 })
 
-// Test database connection
+// Enhanced database connection test with better error handling
 pool.connect((err, client, release) => {
     if (err) {
-        console.error('Error connecting to database:', err);
+        console.error('❌ Error connecting to database:', err);
+        console.error('Database config:', {
+            host: process.env.DB_HOST,
+            database: process.env.DB_NAME,
+            user: process.env.DB_USER,
+            port: process.env.DB_PORT
+        });
         return;
     }
-    console.log(`Connected to Profiles Database Successfully!`)
+    console.log(`✅ Connected to Profiles Database Successfully!`)
+    console.log(`📍 Connected to: ${process.env.DB_HOST}/${process.env.DB_NAME}`)
     release(); // Release the client back to the pool
 })
+
+// Create table if not exists (for new database)
+const createTableIfNotExists = async () => {
+    try {
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS "Profile_Data" (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(255) NOT NULL,
+                age INTEGER NOT NULL,
+                email VARCHAR(255) UNIQUE NOT NULL,
+                phone_number VARCHAR(20) NOT NULL,
+                date_of_birth DATE NOT NULL,
+                gender VARCHAR(10) NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+        console.log('✅ Profile_Data table ready');
+    } catch (error) {
+        console.error('❌ Error creating table:', error);
+    }
+};
+
+// Call table creation after a short delay
+setTimeout(createTableIfNotExists, 2000);
 
 // EMAIL VALIDATION API ENDPOINT
 app.post('/api/validate-email', async (req, res) => {
@@ -138,7 +174,14 @@ app.get('/debug/profiles', async (req, res) => {
             timestamp: testResult.rows[0].now,
             profileCount: profilesResult.rows[0].count,
             sampleProfiles: sampleProfiles.rows,
-            message: 'Database connection working'
+            message: 'Database connection working',
+            environment: {
+                DB_HOST: process.env.DB_HOST,
+                DB_NAME: process.env.DB_NAME,
+                DB_USER: process.env.DB_USER,
+                NODE_ENV: process.env.NODE_ENV,
+                PORT: port
+            }
         });
         
     } catch (error) {
@@ -152,7 +195,53 @@ app.get('/debug/profiles', async (req, res) => {
     }
 });
 
-// FIXED: GET MOST RECENT PROFILE - Using simpler route pattern
+// Test database connection endpoint
+app.get('/debug/db-test', async (req, res) => {
+    try {
+        console.log('Testing database connection...');
+        console.log('DB Config:', {
+            host: process.env.DB_HOST,
+            user: process.env.DB_USER,
+            database: process.env.DB_NAME,
+            port: process.env.DB_PORT
+        });
+        
+        // Test basic connection
+        const testResult = await pool.query('SELECT NOW() as current_time');
+        console.log('✅ Database connection successful');
+        
+        // Test profiles table
+        const tableCheck = await pool.query(`
+            SELECT table_name 
+            FROM information_schema.tables 
+            WHERE table_schema = 'public' AND table_name = 'Profile_Data'
+        `);
+        
+        res.json({
+            success: true,
+            timestamp: testResult.rows[0].current_time,
+            tableExists: tableCheck.rows.length > 0,
+            environment: process.env.NODE_ENV,
+            dbConfig: {
+                host: process.env.DB_HOST || 'Not set',
+                user: process.env.DB_USER || 'Not set',
+                database: process.env.DB_NAME || 'Not set',
+                port: process.env.DB_PORT || 'Not set'
+            }
+        });
+        
+    } catch (error) {
+        console.error('❌ Database test failed:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message,
+            code: error.code,
+            details: error.detail
+        });
+    }
+});
+
+// GET MOST RECENT PROFILE - Using simpler route pattern
 app.get('/profiles/recent', (req, res) => {
     console.log('🔍 Fetching most recent profile...');
     const sql = 'SELECT * FROM "Profile_Data" ORDER BY id DESC LIMIT 1';
@@ -345,26 +434,31 @@ app.get('/', (req, res) => {
     res.json({ 
         message: "Profile API is running successfully!",
         timestamp: new Date().toISOString(),
-        environment: process.env.NODE_ENV || 'development'
+        environment: process.env.NODE_ENV || 'development',
+        port: port
     })
 });
 
-// Health check endpoint
+// Health check endpoint (important for Render)
 app.get('/health', (req, res) => {
     res.json({
         status: 'OK',
         timestamp: new Date().toISOString(),
-        uptime: process.uptime()
+        uptime: process.uptime(),
+        port: port,
+        environment: process.env.NODE_ENV
     });
 });
 
-app.listen(port, (err) => {
+// CRITICAL: Bind to 0.0.0.0 instead of localhost for Render deployment
+app.listen(port, '0.0.0.0', (err) => {
     if (err) {
-        console.error('Failed to start server:', err);
+        console.error('❌ Failed to start server:', err);
         process.exit(1);
     }
-    console.log(`🚀 Server is running successfully on port: ${port}`)
-    console.log(`🔗 API Base URL: http://localhost:${port}`)
+    console.log(`🚀 Server running successfully on 0.0.0.0:${port}`)
+    console.log(`🔗 API Base URL: http://0.0.0.0:${port}`)
     console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`)
     console.log(`🗄️ Database Host: ${process.env.DB_HOST || 'localhost'}`)
+    console.log(`📊 Database Name: ${process.env.DB_NAME || 'Profiles'}`)
 })
