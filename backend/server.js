@@ -45,7 +45,7 @@ pool.connect((err, client, release) => {
     release(); // Release the client back to the pool
 })
 
-// EMAIL VALIDATION API ENDPOINT (NEW)
+// EMAIL VALIDATION API ENDPOINT
 app.post('/api/validate-email', async (req, res) => {
     try {
         const { email } = req.body;
@@ -116,11 +116,91 @@ app.post('/api/validate-email', async (req, res) => {
     }
 });
 
-// 1. GET ALL PROFILES WITH PAGINATION (for home page - all profiles list)
+// DEBUG ENDPOINT - For testing database connection
+app.get('/debug/profiles', async (req, res) => {
+    try {
+        console.log('🔍 Testing database connection...');
+        
+        // Test basic connection
+        const testResult = await pool.query('SELECT NOW()');
+        console.log('✅ Database connection successful:', testResult.rows[0]);
+        
+        // Test profiles table
+        const profilesResult = await pool.query('SELECT COUNT(*) FROM "Profile_Data"');
+        console.log('✅ Profiles count:', profilesResult.rows[0].count);
+        
+        // Get sample profiles
+        const sampleProfiles = await pool.query('SELECT * FROM "Profile_Data" LIMIT 3');
+        console.log('✅ Sample profiles:', sampleProfiles.rows);
+        
+        res.json({
+            success: true,
+            timestamp: testResult.rows[0].now,
+            profileCount: profilesResult.rows[0].count,
+            sampleProfiles: sampleProfiles.rows,
+            message: 'Database connection working',
+            environment: {
+                DB_HOST: process.env.DB_HOST || 'localhost',
+                DB_NAME: process.env.DB_NAME || 'Profiles',
+                DB_USER: process.env.DB_USER || 'postgres',
+                NODE_ENV: process.env.NODE_ENV || 'development'
+            }
+        });
+        
+    } catch (error) {
+        console.error('❌ Database connection failed:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message,
+            code: error.code,
+            message: 'Database connection failed'
+        });
+    }
+});
+
+// FIXED: GET MOST RECENT PROFILE (moved BEFORE general /profiles route)
+app.get("/profiles/recent/latest", (req, res) => {
+    console.log('🔍 Fetching most recent profile...');
+    const sql = 'SELECT * FROM "Profile_Data" ORDER BY id DESC LIMIT 1';
+    pool.query(sql, (err, result) => {
+        if (err) {
+            console.error('Database error:', err);
+            return res.status(500).json({ error: 'Failed to fetch recent profile' });
+        }
+        if (result.rows.length === 0) {
+            console.log('No profiles found');
+            return res.status(200).json(null); // No profiles yet
+        }
+        console.log('✅ Recent profile fetched:', result.rows[0]);
+        return res.status(200).json(result.rows[0])
+    })
+});
+
+// FIXED: GET SINGLE PROFILE BY ID (moved BEFORE general /profiles route)
+app.get("/profiles/:id", (req, res) => {
+    const id = Number(req.params.id);
+    console.log(`🔍 Fetching profile with ID: ${id}`);
+    const sql = 'SELECT * FROM "Profile_Data" WHERE id=$1';
+    pool.query(sql, [id], (err, result) => {
+        if (err) {
+            console.error('Database error:', err);
+            return res.status(500).json({ error: 'Failed to fetch profile' });
+        }
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Profile not found' });
+        }
+        console.log('✅ Profile fetched successfully:', result.rows[0]);
+        return res.status(200).json(result.rows[0])
+    })
+});
+
+// GET ALL PROFILES WITH PAGINATION (moved AFTER specific routes)
 app.get("/profiles", (req, res) => {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
     const offset = (page - 1) * limit;
+
+    console.log(`🔍 Fetching profiles - Page: ${page}, Limit: ${limit}, Offset: ${offset}`);
 
     // Get total count
     const countSql = 'SELECT COUNT(*) FROM "Profile_Data"';
@@ -134,6 +214,8 @@ app.get("/profiles", (req, res) => {
         const totalProfiles = parseInt(countResult.rows[0].count);
         const totalPages = Math.ceil(totalProfiles / limit);
         
+        console.log(`📊 Total profiles: ${totalProfiles}, Total pages: ${totalPages}`);
+        
         // Get paginated profiles
         const sql = 'SELECT * FROM "Profile_Data" ORDER BY id DESC LIMIT $1 OFFSET $2';
         
@@ -142,6 +224,8 @@ app.get("/profiles", (req, res) => {
                 console.error('Database error:', err);
                 return res.status(500).json({ error: 'Failed to fetch profiles' });
             }
+            
+            console.log(`✅ Profiles fetched successfully: ${result.rows.length} profiles`);
             
             return res.status(200).json({
                 profiles: result.rows,
@@ -153,42 +237,13 @@ app.get("/profiles", (req, res) => {
             });
         });
     });
-})
+});
 
-// 2. GET SINGLE PROFILE BY ID (for editing)
-app.get("/profiles/:id", (req, res) => {
-    const id = Number(req.params.id);
-    const sql = 'SELECT * FROM "Profile_Data" WHERE id=$1';
-    pool.query(sql, [id], (err, result) => {
-        if (err) {
-            console.error('Database error:', err);
-            return res.status(500).json({ error: 'Failed to fetch profile' });
-        }
-        if (result.rows.length === 0) {
-            return res.status(404).json({ error: 'Profile not found' });
-        }
-        return res.status(200).json(result.rows[0])
-    })
-})
-
-// 3. GET MOST RECENT PROFILE (for home page - recently added section)
-app.get("/profiles/recent/latest", (req, res) => {
-    const sql = 'SELECT * FROM "Profile_Data" ORDER BY id DESC LIMIT 1';
-    pool.query(sql, (err, result) => {
-        if (err) {
-            console.error('Database error:', err);
-            return res.status(500).json({ error: 'Failed to fetch recent profile' });
-        }
-        if (result.rows.length === 0) {
-            return res.status(200).json(null); // No profiles yet
-        }
-        return res.status(200).json(result.rows[0])
-    })
-})
-
-// 4. CREATE NEW PROFILE
+// CREATE NEW PROFILE
 app.post('/profiles', async (req, res) => {
     const { name, age, email, phone_number, date_of_birth, gender } = req.body;
+    
+    console.log('🆕 Creating new profile:', { name, age, email, phone_number, date_of_birth, gender });
     
     // Basic validation
     if (!name || !age || !email || !phone_number || !date_of_birth || !gender) {
@@ -202,13 +257,13 @@ app.post('/profiles', async (req, res) => {
             [name, age, email, phone_number, date_of_birth, gender]
         );
         
-        console.log('Profile saved:', result.rows[0]);
+        console.log('✅ Profile created successfully:', result.rows[0]);
         res.status(201).json({
             message: 'Profile created successfully',
             data: result.rows[0]
         });
     } catch (err) {
-        console.error('Database error:', err);
+        console.error('❌ Database error:', err);
         if (err.code === '23505') { // Unique constraint violation
             if (err.constraint === 'unique_email') {
                 return res.status(400).json({ error: 'Email already exists' });
@@ -218,10 +273,12 @@ app.post('/profiles', async (req, res) => {
     }
 });
 
-// 5. UPDATE PROFILE
+// UPDATE PROFILE
 app.put('/profiles/:id', async (req, res) => {
     const { id } = req.params;
     const { name, age, email, phone_number, date_of_birth, gender } = req.body;
+    
+    console.log(`✏️ Updating profile ${id}:`, { name, age, email, phone_number, date_of_birth, gender });
     
     // Basic validation
     if (!name || !age || !email || !phone_number || !date_of_birth || !gender) {
@@ -237,15 +294,17 @@ app.put('/profiles/:id', async (req, res) => {
         );
         
         if (result.rows.length > 0) {
+            console.log('✅ Profile updated successfully:', result.rows[0]);
             res.status(200).json({
                 message: `Profile updated successfully for ID ${id}`,
                 data: result.rows[0]
             });
         } else {
+            console.log(`❌ Profile not found for ID ${id}`);
             res.status(404).json({ error: 'Profile not found' });
         }
     } catch (err) {
-        console.error('Database error:', err);
+        console.error('❌ Database error:', err);
         if (err.code === '23505' && err.constraint === 'unique_email') {
             return res.status(400).json({ error: 'Email already exists' });
         }
@@ -253,9 +312,11 @@ app.put('/profiles/:id', async (req, res) => {
     }
 });
 
-// 6. DELETE PROFILE
+// DELETE PROFILE
 app.delete('/profiles/:id', async (req, res) => {
     const { id } = req.params;
+    
+    console.log(`🗑️ Deleting profile ${id}`);
     
     try {
         const result = await pool.query(
@@ -264,26 +325,52 @@ app.delete('/profiles/:id', async (req, res) => {
         );
         
         if (result.rows.length > 0) {
+            console.log('✅ Profile deleted successfully:', result.rows[0]);
             res.status(200).json({
                 message: `Profile deleted successfully for ID ${id}`,
                 data: result.rows[0]
             });
         } else {
+            console.log(`❌ Profile not found for ID ${id}`);
             res.status(404).json({ error: 'Profile not found' });
         }
     } catch (err) {
-        console.error('Database error:', err);
+        console.error('❌ Database error:', err);
         res.status(500).json({ error: 'Failed to delete profile' });
     }
 });
 
 // Test route
 app.get("/", (req, res) => {
-    res.json({ message: "Profile API is running successfully!" })
-})
+    res.json({ 
+        message: "Profile API is running successfully!",
+        timestamp: new Date().toISOString(),
+        environment: process.env.NODE_ENV || 'development'
+    })
+});
+
+// Handle 404 for undefined routes
+app.use('*', (req, res) => {
+    res.status(404).json({
+        error: 'Route not found',
+        path: req.originalUrl,
+        method: req.method
+    });
+});
+
+// Global error handler
+app.use((err, req, res, next) => {
+    console.error('Unhandled error:', err);
+    res.status(500).json({
+        error: 'Internal server error',
+        message: err.message
+    });
+});
 
 app.listen(port, (err) => {
     if (err) throw err;
-    console.log(`Server is running successfully on port: ${port}`)
-    console.log(`API Base URL: http://localhost:${port}`)
+    console.log(`🚀 Server is running successfully on port: ${port}`)
+    console.log(`🔗 API Base URL: http://localhost:${port}`)
+    console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`)
+    console.log(`🗄️ Database Host: ${process.env.DB_HOST || 'localhost'}`)
 })
